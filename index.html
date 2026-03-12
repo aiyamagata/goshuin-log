@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>御朱印ログ / Goshuin Log</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gelasio:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Shippori+Mincho:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Auth Screen -->
+  <div id="authScreen" class="auth-screen">
+    <div class="auth-card">
+      <div class="auth-header">
+        <span class="auth-icon">⛩</span>
+        <h1 class="auth-title">御朱印ログ</h1>
+        <p class="auth-subtitle">参拝の記録をクラウドに保存</p>
+      </div>
+      <div id="authError" class="auth-error hidden"></div>
+      <form id="authForm" autocomplete="on">
+        <div class="form-group">
+          <label for="authEmail">メールアドレス</label>
+          <input type="email" id="authEmail" autocomplete="email" required placeholder="example@email.com">
+        </div>
+        <div class="form-group">
+          <label for="authPassword">パスワード <span class="text-muted">(6文字以上)</span></label>
+          <input type="password" id="authPassword" autocomplete="current-password" required minlength="6" placeholder="••••••••">
+        </div>
+        <button type="submit" class="btn-primary auth-submit-btn" id="authSubmitBtn">ログイン</button>
+      </form>
+      <p class="auth-toggle-wrap">
+        <span id="authToggleText">アカウントをお持ちでない方は</span>
+        <button class="btn-link" id="authToggleBtn">新規登録</button>
+      </p>
+    </div>
+  </div>
+
+  <!-- App Content (shown after login) -->
+  <div id="appContent" class="hidden">
+
+    <!-- Header -->
+    <header class="header">
+      <div class="header-title">
+        <span class="header-icon">⛩</span>
+        <h1 data-i18n="appTitle">御朱印ログ</h1>
+      </div>
+      <nav class="tabs">
+        <button class="tab-btn active" data-tab="list" data-i18n="tabList">一覧</button>
+        <button class="tab-btn" data-tab="map" data-i18n="tabMap">地図</button>
+      </nav>
+      <div class="header-actions">
+        <span id="userEmail" class="user-email"></span>
+        <button class="btn-secondary btn-sm hidden" id="logoutBtn">ログアウト</button>
+        <button class="lang-btn" id="langToggle">EN</button>
+        <button class="btn-primary" id="addBtn" data-i18n="addRecord">＋ 追加</button>
+      </div>
+    </header>
+
+    <!-- Main -->
+    <main>
+
+      <!-- List View -->
+      <div id="listView" class="view active">
+        <div class="list-toolbar">
+          <div class="search-wrap">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="searchInput" class="search-input" data-i18n-placeholder="searchPlaceholder" placeholder="寺社名・メモで検索">
+          </div>
+          <span id="recordCount" class="record-count"></span>
+        </div>
+        <div id="loadingState" class="loading-state hidden">
+          <div class="loading-spinner"></div>
+          <p>読み込み中…</p>
+        </div>
+        <div id="errorState" class="error-state hidden">
+          <p id="errorMsg">データの読み込みに失敗しました</p>
+          <button class="btn-secondary" id="retryBtn">再試行</button>
+        </div>
+        <div id="recordGrid" class="record-grid"></div>
+        <div id="emptyState" class="empty-state hidden">
+          <div class="empty-icon">⛩</div>
+          <p data-i18n="emptyState">まだ記録がありません</p>
+          <p class="empty-sub" data-i18n="emptyStateSub">最初の参拝を記録しましょう！</p>
+        </div>
+        <div id="noResultState" class="empty-state hidden">
+          <div class="empty-icon">🔍</div>
+          <p data-i18n="noResults">検索結果がありません</p>
+        </div>
+      </div>
+
+      <!-- Map View -->
+      <div id="mapView" class="view hidden">
+        <div class="map-layout">
+          <div id="map"></div>
+          <div id="mapSidebar" class="map-sidebar">
+            <p class="map-sidebar-title" data-i18n="mapSidebarTitle">記録した場所</p>
+            <div id="mapList" class="map-list"></div>
+            <p id="mapNoCoords" class="map-no-coords hidden" data-i18n="mapNoCoords">座標が登録された記録がありません</p>
+          </div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- Add/Edit Modal -->
+    <div id="modal" class="modal-overlay hidden" role="dialog" aria-modal="true">
+      <div class="modal">
+        <div class="modal-header">
+          <h2 id="modalTitle" data-i18n="addRecord">記録を追加</h2>
+          <button class="modal-close" id="modalClose" aria-label="Close">×</button>
+        </div>
+        <div class="modal-body">
+          <form id="recordForm" autocomplete="off">
+
+            <div class="form-group">
+              <label for="fieldName" data-i18n="fieldName">寺社名 <span class="required">*</span></label>
+              <div class="input-row">
+                <input type="text" id="fieldName" required>
+                <button type="button" id="geocodeBtn" class="btn-secondary btn-sm" data-i18n="geocode">位置取得</button>
+              </div>
+              <p class="field-hint" data-i18n="geocodeHint">「位置取得」で寺社名から緯度経度を自動取得</p>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="fieldDate" data-i18n="fieldDate">参拝日 <span class="required">*</span></label>
+                <input type="date" id="fieldDate" required>
+              </div>
+              <div class="form-group">
+                <label for="fieldType" data-i18n="fieldType">種類</label>
+                <select id="fieldType">
+                  <option value="御朱印">御朱印</option>
+                  <option value="御城印">御城印</option>
+                  <option value="御首題">御首題</option>
+                  <option value="絵馬">絵馬</option>
+                  <option value="その他">その他</option>
+                  <option value="__custom__" data-i18n-opt="typeCustom">自由入力...</option>
+                </select>
+                <input type="text" id="fieldTypeCustom" class="hidden mt-4" data-i18n-placeholder="typeCustomPlaceholder" placeholder="種類を入力">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="fieldMemo" data-i18n="fieldMemo">メモ</label>
+              <textarea id="fieldMemo" rows="3"></textarea>
+            </div>
+
+            <div class="form-group">
+              <label data-i18n="fieldImage">画像</label>
+              <div class="image-upload-area" id="imageUploadArea">
+                <input type="file" id="fieldImage" accept="image/*" class="image-file-input">
+                <div class="image-upload-placeholder" id="imageUploadPlaceholder">
+                  <span class="image-upload-icon">📷</span>
+                  <span class="image-upload-text" data-i18n="imageUploadText">タップして写真を選択・撮影</span>
+                </div>
+                <img id="imagePreview" class="image-preview hidden" alt="preview">
+                <button type="button" id="imageRemoveBtn" class="image-remove-btn hidden" data-i18n="imageRemove">✕ 画像を削除</button>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="fieldLat" data-i18n="fieldLat">緯度</label>
+                <input type="number" id="fieldLat" step="any" placeholder="35.6762">
+              </div>
+              <div class="form-group">
+                <label for="fieldLng" data-i18n="fieldLng">経度</label>
+                <input type="number" id="fieldLng" step="any" placeholder="139.6503">
+              </div>
+            </div>
+
+            <div id="geocodeStatus" class="geocode-status hidden"></div>
+            <div id="weatherPreview" class="weather-preview hidden"></div>
+
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" id="cancelBtn" data-i18n="cancel">キャンセル</button>
+          <button type="button" class="btn-primary" id="saveBtn" data-i18n="save">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Delete Confirm Modal -->
+    <div id="deleteModal" class="modal-overlay hidden" role="dialog" aria-modal="true">
+      <div class="modal modal-sm">
+        <div class="modal-header">
+          <h2 data-i18n="deleteConfirmTitle">削除の確認</h2>
+        </div>
+        <div class="modal-body">
+          <p data-i18n="deleteConfirmMsg">この記録を削除しますか？この操作は取り消せません。</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" id="deleteCancelBtn" data-i18n="cancel">キャンセル</button>
+          <button type="button" class="btn-danger" id="deleteConfirmBtn" data-i18n="delete">削除</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="toast hidden"></div>
+
+  </div><!-- /#appContent -->
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="js/i18n.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/supabase.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
