@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
       showApp(session.user);
       // Fetch only on initial load or sign-in, not on every token refresh
       if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
-        await loadRecords();
+        await loadRecords(session.user.id);
       }
     } else {
       showAuthScreen();
@@ -31,21 +31,66 @@ document.addEventListener('DOMContentLoaded', () => {
 
 let _fetchSeq = 0;
 
-async function loadRecords() {
-  const seq = ++_fetchSeq;
+// ── Cache helpers ─────────────────────────────
+function _cacheKey(userId) {
+  return 'goshuin_records_' + userId;
+}
+
+function _loadCache(userId) {
   try {
+    const raw = localStorage.getItem(_cacheKey(userId));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function _saveCache(userId, data) {
+  try {
+    localStorage.setItem(_cacheKey(userId), JSON.stringify(data));
+  } catch {
+    // Quota exceeded — retry without imageData to save space
+    try {
+      const slim = data.map(r => ({ ...r, imageData: null }));
+      localStorage.setItem(_cacheKey(userId), JSON.stringify(slim));
+    } catch { /* give up */ }
+  }
+}
+
+function _clearCache(userId) {
+  try { localStorage.removeItem(_cacheKey(userId)); } catch { /* ignore */ }
+}
+
+async function loadRecords(userId) {
+  const seq = ++_fetchSeq;
+
+  // Stale-while-revalidate: show cached data instantly
+  const cached = userId ? _loadCache(userId) : null;
+  if (cached) {
+    records = cached;
+    hideLoadingState();
+    renderList();
+  } else {
     showLoadingState();
+  }
+
+  try {
     const result = await dbFetchRecords();
     if (seq !== _fetchSeq) return; // 新しい呼び出しが始まっていれば破棄
     records = result;
+    if (userId) _saveCache(userId, result);
     hideLoadingState();
     renderList();
   } catch (e) {
     if (seq !== _fetchSeq) return;
     console.error('loadRecords failed:', e);
-    records = [];
-    try { hideLoadingState(); } catch {}
-    showErrorState(e?.message || t('loadError'));
+    if (!cached) {
+      // キャッシュもなければエラー表示
+      records = [];
+      try { hideLoadingState(); } catch {}
+      showErrorState(e?.message || t('loadError'));
+    }
+    // キャッシュがあれば黙って維持（バックグラウンド更新失敗は無視）
   }
 }
 
@@ -502,7 +547,10 @@ function setupEventListeners() {
   });
 
   // Retry button
-  document.getElementById('retryBtn').addEventListener('click', loadRecords);
+  document.getElementById('retryBtn').addEventListener('click', async () => {
+    const user = await authGetUser();
+    loadRecords(user ? user.id : null);
+  });
 
   // Add button
   document.getElementById('addBtn').addEventListener('click', () => openModal());
@@ -590,6 +638,8 @@ function setupEventListeners() {
   // Logout
   document.getElementById('logoutBtn').addEventListener('click', async () => {
     try {
+      const user = await authGetUser();
+      if (user) _clearCache(user.id);
       await authSignOut();
     } catch (e) {
       console.error(e);
@@ -629,6 +679,22 @@ function setupEventListeners() {
     } finally {
       btn.disabled = false;
       btn.textContent = authMode === 'signup' ? t('authSignUp') : t('authLogin');
+    }
+  });
+
+  document.getElementById('googleLoginBtn').addEventListener('click', async () => {
+    const btn   = document.getElementById('googleLoginBtn');
+    const errEl = document.getElementById('authError');
+    btn.disabled = true;
+    errEl.classList.add('hidden');
+    try {
+      await authSignInWithGoogle();
+      // ブラウザがGoogleのOAuth画面にリダイレクトされるため、以降の処理は不要
+    } catch (err) {
+      errEl.classList.remove('hidden');
+      errEl.classList.remove('auth-info');
+      errEl.textContent = translateAuthError(err.message);
+      btn.disabled = false;
     }
   });
 

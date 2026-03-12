@@ -21,6 +21,15 @@ async function authSignIn(email, password) {
   return data;
 }
 
+async function authSignInWithGoogle() {
+  const { data, error } = await sbClient.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: window.location.href },
+  });
+  if (error) throw error;
+  return data;
+}
+
 async function authSignOut() {
   const { error } = await sbClient.auth.signOut();
   if (error) throw error;

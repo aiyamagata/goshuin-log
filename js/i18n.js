@@ -71,6 +71,7 @@ const TRANSLATIONS = {
     authErrorPassword: 'パスワードは6文字以上で入力してください',
     authErrorRateLimit: 'しばらく時間をおいてから再試行してください',
     authErrorUnknown:  'エラーが発生しました。再試行してください',
+    authGoogleLogin:   'Googleでログイン',
 
     langCode:          'ja',
     langToggleLabel:   'EN',
@@ -144,6 +145,7 @@ const TRANSLATIONS = {
     authErrorPassword: 'Password must be at least 6 characters',
     authErrorRateLimit: 'Please wait a moment and try again',
     authErrorUnknown:  'An error occurred. Please try again',
+    authGoogleLogin:   'Sign in with Google',
 
     langCode:          'en',
     langToggleLabel:   '日本語',
